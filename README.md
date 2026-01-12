@@ -161,6 +161,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
 # CLIPROXYAPI_URL=http://localhost:8318
 # CLIPROXYAPI_PATH=~/code/utilities/cliproxyapi
 # CLIPROXYAPI_PORT=8318
+# CLIPROXYAPI_KEY=your-api-key            # Must match cliproxyapi's auth config
 
 # Optional settings
 PORT=3001                           # Server port
@@ -233,6 +234,9 @@ cp .env.example .env
 git clone https://github.com/yourusername/cliproxyapi ~/code/utilities/cliproxyapi
 cd ~/code/utilities/cliproxyapi
 # Follow cliproxyapi setup instructions
+
+# Start the proxy server
+./cli-proxy-api -config config.yaml
 ```
 
 ### Port already in use

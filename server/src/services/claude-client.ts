@@ -114,9 +114,11 @@ class ClaudeClient {
       this.apiMode = 'direct';
     } else if (this.proxyUrl) {
       // Use cliproxyapi fallback
+      // The proxy requires a valid API key that matches its auth configuration
+      const proxyKey = process.env.CLIPROXYAPI_KEY || 'proxy-managed';
       this.client = new Anthropic({
         baseURL: this.proxyUrl,
-        apiKey: 'proxy-managed', // Proxy handles authentication
+        apiKey: proxyKey,
       });
       this.apiMode = 'proxy';
     } else {
