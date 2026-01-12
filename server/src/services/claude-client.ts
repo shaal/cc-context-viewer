@@ -207,66 +207,71 @@ class ClaudeClient {
       let blockIndex = 0;
       const blockMap = new Map<number, string>(); // Maps API block index to our block ID
 
-      // Handle stream events
+      // Handle stream events using streamEvent for raw SSE events
       stream.on('message', (message) => {
         messageId = message.id;
         callbacks.onMessageStart(message.id, message.model);
       });
 
-      stream.on('contentBlockStart', (event) => {
-        const idx = event.index;
-        const contentBlock = event.content_block;
+      stream.on('streamEvent', (event) => {
+        // Handle content_block_start
+        if (event.type === 'content_block_start') {
+          const idx = event.index;
+          const contentBlock = event.content_block;
 
-        let blockType: ContentType;
-        let toolName: string | undefined;
-        let toolId: string | undefined;
+          let blockType: ContentType;
+          let toolName: string | undefined;
+          let toolId: string | undefined;
 
-        if (contentBlock.type === 'tool_use') {
-          blockType = ContentType.TOOL_USE;
-          toolName = contentBlock.name;
-          toolId = contentBlock.id;
-        } else if (contentBlock.type === 'thinking') {
-          blockType = ContentType.ASSISTANT_THINKING;
-        } else {
-          blockType = ContentType.ASSISTANT_TEXT;
+          if (contentBlock.type === 'tool_use') {
+            blockType = ContentType.TOOL_USE;
+            toolName = contentBlock.name;
+            toolId = contentBlock.id;
+          } else if (contentBlock.type === 'thinking') {
+            blockType = ContentType.ASSISTANT_THINKING;
+          } else {
+            blockType = ContentType.ASSISTANT_TEXT;
+          }
+
+          // Create streaming block in context store
+          const block = contextStore.createStreamingBlock(blockType, {
+            toolName,
+            toolId,
+            messageId: messageId || undefined,
+          });
+
+          currentBlockId = block.id;
+          blockMap.set(idx, block.id);
+          callbacks.onContentBlockStart(block.id, blockType, toolName, toolId);
         }
 
-        // Create streaming block in context store
-        const block = contextStore.createStreamingBlock(blockType, {
-          toolName,
-          toolId,
-          messageId: messageId || undefined,
-        });
+        // Handle content_block_delta
+        if (event.type === 'content_block_delta') {
+          const blockId = blockMap.get(event.index);
+          if (!blockId) return;
 
-        currentBlockId = block.id;
-        blockMap.set(idx, block.id);
-        callbacks.onContentBlockStart(block.id, blockType, toolName, toolId);
-      });
+          let delta = '';
+          if (event.delta.type === 'text_delta') {
+            delta = event.delta.text;
+          } else if (event.delta.type === 'thinking_delta') {
+            delta = (event.delta as { thinking: string }).thinking;
+          } else if (event.delta.type === 'input_json_delta') {
+            delta = event.delta.partial_json;
+          }
 
-      stream.on('contentBlockDelta', (event) => {
-        const blockId = blockMap.get(event.index);
-        if (!blockId) return;
-
-        let delta = '';
-        if (event.delta.type === 'text_delta') {
-          delta = event.delta.text;
-        } else if (event.delta.type === 'thinking_delta') {
-          delta = event.delta.thinking;
-        } else if (event.delta.type === 'input_json_delta') {
-          delta = event.delta.partial_json;
+          if (delta) {
+            contextStore.appendToBlock(blockId, delta);
+            callbacks.onContentBlockDelta(blockId, delta);
+          }
         }
 
-        if (delta) {
-          contextStore.appendToBlock(blockId, delta);
-          callbacks.onContentBlockDelta(blockId, delta);
-        }
-      });
-
-      stream.on('contentBlockStop', (event) => {
-        const blockId = blockMap.get(event.index);
-        if (blockId) {
-          contextStore.finalizeBlock(blockId);
-          callbacks.onContentBlockStop(blockId);
+        // Handle content_block_stop
+        if (event.type === 'content_block_stop') {
+          const blockId = blockMap.get(event.index);
+          if (blockId) {
+            contextStore.finalizeBlock(blockId);
+            callbacks.onContentBlockStop(blockId);
+          }
         }
       });
 
