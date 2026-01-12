@@ -1,62 +1,56 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import { blocks } from '$lib/stores/context';
+  import { createEventDispatcher, onMount } from 'svelte';
+  import {
+    searchQuery as searchQueryStore,
+    matchCount,
+    currentMatchIndex,
+    currentMatch,
+    isSearching,
+    setSearchQuery,
+    nextMatch as goNextMatch,
+    prevMatch as goPrevMatch,
+    clearSearch as clearSearchStore,
+    initializeSearch,
+  } from '$lib/stores/search';
 
   const dispatch = createEventDispatcher();
 
-  let searchQuery = '';
-  let matchCount = 0;
-  let currentMatch = 0;
   let inputElement: HTMLInputElement;
+  let localQuery = '';
 
-  // Find matches when query changes
-  $: {
-    if (searchQuery.length >= 2) {
-      const query = searchQuery.toLowerCase();
-      let count = 0;
-      for (const block of $blocks) {
-        const matches = block.content.toLowerCase().split(query).length - 1;
-        count += matches;
-      }
-      matchCount = count;
-      currentMatch = count > 0 ? 1 : 0;
-    } else {
-      matchCount = 0;
-      currentMatch = 0;
-    }
-    dispatch('search', { query: searchQuery, matchCount });
+  // Sync local query with store
+  $: localQuery = $searchQueryStore;
+
+  // Dispatch events for parent components
+  $: dispatch('search', { query: $searchQueryStore, matchCount: $matchCount });
+  $: if ($currentMatch) {
+    dispatch('navigate', { match: $currentMatch });
+  }
+
+  // Display values (1-indexed for users)
+  $: displayIndex = $matchCount > 0 ? $currentMatchIndex + 1 : 0;
+
+  function handleInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    setSearchQuery(target.value);
   }
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       if (event.shiftKey) {
-        prevMatch();
+        goPrevMatch();
       } else {
-        nextMatch();
+        goNextMatch();
       }
     }
     if (event.key === 'Escape') {
-      searchQuery = '';
+      clearSearchStore();
       inputElement?.blur();
     }
   }
 
-  function nextMatch() {
-    if (matchCount > 0) {
-      currentMatch = currentMatch >= matchCount ? 1 : currentMatch + 1;
-      dispatch('navigate', { index: currentMatch });
-    }
-  }
-
-  function prevMatch() {
-    if (matchCount > 0) {
-      currentMatch = currentMatch <= 1 ? matchCount : currentMatch - 1;
-      dispatch('navigate', { index: currentMatch });
-    }
-  }
-
-  function clearSearch() {
-    searchQuery = '';
+  function handleClear() {
+    clearSearchStore();
     inputElement?.focus();
   }
 
@@ -68,6 +62,11 @@
       inputElement?.select();
     }
   }
+
+  // Initialize worker on mount
+  onMount(() => {
+    initializeSearch();
+  });
 </script>
 
 <svelte:window on:keydown={handleGlobalKeydown} />
@@ -76,26 +75,29 @@
   <span class="search-icon">🔍</span>
   <input
     bind:this={inputElement}
-    bind:value={searchQuery}
+    value={localQuery}
     type="text"
     placeholder="Search context... (Ctrl+F)"
+    on:input={handleInput}
     on:keydown={handleKeydown}
   />
-  {#if searchQuery}
+  {#if localQuery}
     <span class="match-count">
-      {#if matchCount > 0}
-        {currentMatch}/{matchCount}
+      {#if $isSearching}
+        Searching...
+      {:else if $matchCount > 0}
+        {displayIndex}/{$matchCount}
       {:else}
         No matches
       {/if}
     </span>
-    <button class="nav-btn" on:click={prevMatch} disabled={matchCount === 0} title="Previous (Shift+Enter)">
+    <button class="nav-btn" on:click={goPrevMatch} disabled={$matchCount === 0} title="Previous (Shift+Enter)">
       ↑
     </button>
-    <button class="nav-btn" on:click={nextMatch} disabled={matchCount === 0} title="Next (Enter)">
+    <button class="nav-btn" on:click={goNextMatch} disabled={$matchCount === 0} title="Next (Enter)">
       ↓
     </button>
-    <button class="clear-btn" on:click={clearSearch} title="Clear (Esc)">
+    <button class="clear-btn" on:click={handleClear} title="Clear (Esc)">
       ✕
     </button>
   {/if}
