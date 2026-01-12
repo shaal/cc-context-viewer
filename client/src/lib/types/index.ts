@@ -60,6 +60,7 @@ export type SSEEventType =
   | 'content_block_stop'
   | 'message_delta'
   | 'message_stop'
+  | 'tool_result'
   | 'error';
 
 export interface SSEMessage {

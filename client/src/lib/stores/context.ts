@@ -247,6 +247,23 @@ function handleSSEEvent(data: Record<string, unknown>): void {
     return;
   }
 
+  if ('toolId' in data && 'toolName' in data && 'result' in data) {
+    // tool_result event
+    const toolResultBlock: ContextBlock = {
+      id: `tool-result-${Date.now()}-${data.toolId}`,
+      type: 'tool_result' as ContentType,
+      content: data.result as string,
+      timestamp: new Date().toISOString(),
+      isStreaming: false,
+      metadata: {
+        toolName: data.toolName as string,
+        toolId: data.toolId as string,
+      },
+    };
+    blocks.update((b) => [...b, toolResultBlock]);
+    return;
+  }
+
   if ('message' in data) {
     // error event from SSE stream
     const errorMessage = data.message as string;

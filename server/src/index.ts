@@ -23,11 +23,14 @@ import cors from 'cors';
 import chatRouter from './routes/chat.js';
 import contextRouter from './routes/context.js';
 import exportRouter from './routes/export.js';
-import { claudeClient } from './services/claude-client.js';
+import { claudeClient, setWorkingDirectory } from './services/claude-client.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
+
+// Set the working directory for Claude's file operations
+setWorkingDirectory(PROJECT_DIR);
 
 // Middleware
 app.use(cors({

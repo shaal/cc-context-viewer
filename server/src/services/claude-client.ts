@@ -12,17 +12,19 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ContentBlock, ToolUseBlock, TextBlock } from '@anthropic-ai/sdk/resources/messages';
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
+import { join, resolve, dirname } from 'path';
 import { homedir } from 'os';
+import { execSync, spawn } from 'child_process';
+import { glob } from 'glob';
 import { contextStore } from './context-store.js';
 import { ContentType, type ToolDefinition } from '../types/index.js';
 
 /**
  * Default cliproxyapi configuration
  */
-const DEFAULT_CLIPROXYAPI_PATH = join(homedir(), 'code/utilities/cliproxyapi');
-const DEFAULT_CLIPROXYAPI_PORT = 8318;
+const DEFAULT_CLIPROXYAPI_PATH = join(homedir(), 'code/utilities/CLIProxyAPI');
+const DEFAULT_CLIPROXYAPI_PORT = 8317;
 
 /**
  * Checks if cliproxyapi is available and returns the URL if so
@@ -50,37 +52,165 @@ function getClipProxyUrl(): string | null {
  */
 type ApiMode = 'direct' | 'proxy' | 'unconfigured';
 
-// Example tools for demonstration - can be customized
+// Working directory for file operations
+let workingDirectory = process.cwd();
+
+// Agentic tools for file operations, bash execution, etc.
 const DEFAULT_TOOLS: ToolDefinition[] = [
   {
-    name: 'get_current_time',
-    description: 'Get the current date and time',
-    input_schema: {
-      type: 'object',
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: 'calculate',
-    description: 'Perform a mathematical calculation',
+    name: 'Read',
+    description: 'Read the contents of a file. Use this to examine existing files.',
     input_schema: {
       type: 'object',
       properties: {
-        expression: {
+        file_path: {
           type: 'string',
-          description: 'The mathematical expression to evaluate',
+          description: 'The path to the file to read (absolute or relative to working directory)',
+        },
+        offset: {
+          type: 'number',
+          description: 'Optional line number to start reading from (1-indexed)',
+        },
+        limit: {
+          type: 'number',
+          description: 'Optional number of lines to read',
         },
       },
-      required: ['expression'],
+      required: ['file_path'],
+    },
+  },
+  {
+    name: 'Write',
+    description: 'Write content to a file, creating it if it does not exist or overwriting if it does.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'The path to the file to write',
+        },
+        content: {
+          type: 'string',
+          description: 'The content to write to the file',
+        },
+      },
+      required: ['file_path', 'content'],
+    },
+  },
+  {
+    name: 'Edit',
+    description: 'Edit a file by replacing a specific string with a new string. The old_string must match exactly.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'The path to the file to edit',
+        },
+        old_string: {
+          type: 'string',
+          description: 'The exact string to find and replace',
+        },
+        new_string: {
+          type: 'string',
+          description: 'The string to replace it with',
+        },
+      },
+      required: ['file_path', 'old_string', 'new_string'],
+    },
+  },
+  {
+    name: 'Bash',
+    description: 'Execute a bash command and return the output. Use for running commands, scripts, git operations, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description: 'The bash command to execute',
+        },
+        timeout: {
+          type: 'number',
+          description: 'Optional timeout in milliseconds (default: 30000)',
+        },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'Glob',
+    description: 'Find files matching a glob pattern. Returns list of matching file paths.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'The glob pattern to match (e.g., "**/*.ts", "src/**/*.js")',
+        },
+        path: {
+          type: 'string',
+          description: 'Optional directory to search in (defaults to working directory)',
+        },
+      },
+      required: ['pattern'],
+    },
+  },
+  {
+    name: 'Grep',
+    description: 'Search for a pattern in files. Returns matching lines with file paths and line numbers.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'The regex pattern to search for',
+        },
+        path: {
+          type: 'string',
+          description: 'Optional file or directory to search in',
+        },
+        glob: {
+          type: 'string',
+          description: 'Optional glob pattern to filter files (e.g., "*.ts")',
+        },
+      },
+      required: ['pattern'],
+    },
+  },
+  {
+    name: 'LS',
+    description: 'List files and directories in a path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The directory path to list (defaults to working directory)',
+        },
+      },
+      required: [],
     },
   },
 ];
 
 // Default system prompt
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant. You have access to tools that can help you perform various tasks. When a user asks you to do something that requires a tool, use the appropriate tool to help them.
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI coding assistant with access to the user's filesystem and shell. You can read, write, and edit files, execute bash commands, and search the codebase.
 
-Be concise but thorough in your responses. If you're thinking through a problem, show your reasoning.`;
+Available tools:
+- Read: Read file contents
+- Write: Create or overwrite files
+- Edit: Make precise edits by replacing exact strings
+- Bash: Execute shell commands
+- Glob: Find files by pattern
+- Grep: Search file contents
+- LS: List directory contents
+
+When asked to build or modify software:
+1. First explore the codebase using LS, Glob, and Read
+2. Make changes using Write or Edit
+3. Use Bash to run tests, install dependencies, or execute scripts
+
+Be proactive - actually create and modify files rather than just showing code.`;
 
 /**
  * Type for streaming event callbacks
@@ -91,6 +221,7 @@ export interface StreamCallbacks {
   onContentBlockDelta: (blockId: string, delta: string) => void;
   onContentBlockStop: (blockId: string) => void;
   onMessageStop: (messageId: string, stopReason: string, inputTokens: number, outputTokens: number) => void;
+  onToolResult: (toolId: string, toolName: string, result: string) => void;
   onError: (error: Error) => void;
 }
 
@@ -115,7 +246,7 @@ class ClaudeClient {
     } else if (this.proxyUrl) {
       // Use cliproxyapi fallback
       // The proxy requires a valid API key that matches its auth configuration
-      const proxyKey = process.env.CLIPROXYAPI_KEY || 'proxy-managed';
+      const proxyKey = process.env.CLIPROXYAPI_KEY || 'cliproxyapi';
       this.client = new Anthropic({
         baseURL: this.proxyUrl,
         apiKey: proxyKey,
@@ -227,7 +358,7 @@ class ClaudeClient {
             blockType = ContentType.TOOL_USE;
             toolName = contentBlock.name;
             toolId = contentBlock.id;
-          } else if (contentBlock.type === 'thinking') {
+          } else if ((contentBlock as { type: string }).type === 'thinking') {
             blockType = ContentType.ASSISTANT_THINKING;
           } else {
             blockType = ContentType.ASSISTANT_TEXT;
@@ -251,12 +382,13 @@ class ClaudeClient {
           if (!blockId) return;
 
           let delta = '';
-          if (event.delta.type === 'text_delta') {
-            delta = event.delta.text;
-          } else if (event.delta.type === 'thinking_delta') {
-            delta = (event.delta as { thinking: string }).thinking;
-          } else if (event.delta.type === 'input_json_delta') {
-            delta = event.delta.partial_json;
+          const deltaObj = event.delta as unknown as Record<string, string>;
+          if (deltaObj.type === 'text_delta') {
+            delta = deltaObj.text;
+          } else if (deltaObj.type === 'thinking_delta') {
+            delta = deltaObj.thinking;
+          } else if (deltaObj.type === 'input_json_delta') {
+            delta = deltaObj.partial_json;
           }
 
           if (delta) {
@@ -335,6 +467,9 @@ class ClaudeClient {
         toolId: toolUse.id,
       });
 
+      // Send tool result via SSE callback
+      callbacks.onToolResult(toolUse.id, toolUse.name, result);
+
       toolResults.push({
         type: 'tool_result',
         tool_use_id: toolUse.id,
@@ -353,28 +488,165 @@ class ClaudeClient {
   }
 
   /**
+   * Resolves a file path relative to the working directory
+   */
+  private resolvePath(filePath: string): string {
+    if (filePath.startsWith('/')) {
+      return filePath;
+    }
+    if (filePath.startsWith('~')) {
+      return join(homedir(), filePath.slice(1));
+    }
+    return resolve(workingDirectory, filePath);
+  }
+
+  /**
    * Executes a tool and returns the result
    */
   private async executeTool(
     name: string,
     input: Record<string, unknown>
   ): Promise<string> {
-    switch (name) {
-      case 'get_current_time':
-        return new Date().toISOString();
-
-      case 'calculate':
-        try {
-          const expression = input.expression as string;
-          // Simple safe evaluation - in production use a proper math parser
-          const result = Function(`"use strict"; return (${expression})`)();
-          return String(result);
-        } catch {
-          return 'Error: Invalid expression';
+    try {
+      switch (name) {
+        case 'Read': {
+          const filePath = this.resolvePath(input.file_path as string);
+          if (!existsSync(filePath)) {
+            return `Error: File not found: ${filePath}`;
+          }
+          const content = readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n');
+          const offset = (input.offset as number) || 1;
+          const limit = (input.limit as number) || lines.length;
+          const selectedLines = lines.slice(offset - 1, offset - 1 + limit);
+          // Format with line numbers
+          return selectedLines
+            .map((line, idx) => `${String(offset + idx).padStart(6)}│${line}`)
+            .join('\n');
         }
 
-      default:
-        return `Tool "${name}" not implemented`;
+        case 'Write': {
+          const filePath = this.resolvePath(input.file_path as string);
+          const content = input.content as string;
+          // Ensure directory exists
+          const dir = dirname(filePath);
+          if (!existsSync(dir)) {
+            execSync(`mkdir -p "${dir}"`);
+          }
+          writeFileSync(filePath, content, 'utf-8');
+          return `Successfully wrote ${content.length} bytes to ${filePath}`;
+        }
+
+        case 'Edit': {
+          const filePath = this.resolvePath(input.file_path as string);
+          if (!existsSync(filePath)) {
+            return `Error: File not found: ${filePath}`;
+          }
+          const oldString = input.old_string as string;
+          const newString = input.new_string as string;
+          let content = readFileSync(filePath, 'utf-8');
+
+          if (!content.includes(oldString)) {
+            return `Error: old_string not found in file. Make sure it matches exactly.`;
+          }
+
+          const occurrences = content.split(oldString).length - 1;
+          if (occurrences > 1) {
+            return `Error: old_string found ${occurrences} times. It must be unique. Add more context.`;
+          }
+
+          content = content.replace(oldString, newString);
+          writeFileSync(filePath, content, 'utf-8');
+          return `Successfully edited ${filePath}`;
+        }
+
+        case 'Bash': {
+          const command = input.command as string;
+          const timeout = (input.timeout as number) || 30000;
+          try {
+            const output = execSync(command, {
+              cwd: workingDirectory,
+              timeout,
+              encoding: 'utf-8',
+              maxBuffer: 10 * 1024 * 1024,
+              shell: '/bin/bash',
+            });
+            return output || '(command completed with no output)';
+          } catch (error: unknown) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout || execError.stderr) {
+              return `${execError.stdout || ''}${execError.stderr || ''}`;
+            }
+            return `Error: ${execError.message || String(error)}`;
+          }
+        }
+
+        case 'Glob': {
+          const pattern = input.pattern as string;
+          const searchPath = input.path ? this.resolvePath(input.path as string) : workingDirectory;
+          const matches = await glob(pattern, {
+            cwd: searchPath,
+            nodir: false,
+            dot: true,
+          });
+          if (matches.length === 0) {
+            return 'No files found matching pattern';
+          }
+          return matches.slice(0, 100).join('\n') + (matches.length > 100 ? `\n... and ${matches.length - 100} more` : '');
+        }
+
+        case 'Grep': {
+          const pattern = input.pattern as string;
+          const searchPath = input.path ? this.resolvePath(input.path as string) : workingDirectory;
+          const fileGlob = input.glob as string | undefined;
+
+          let cmd = `grep -rn "${pattern.replace(/"/g, '\\"')}" "${searchPath}"`;
+          if (fileGlob) {
+            cmd += ` --include="${fileGlob}"`;
+          }
+          cmd += ' 2>/dev/null || true';
+
+          try {
+            const output = execSync(cmd, {
+              cwd: workingDirectory,
+              encoding: 'utf-8',
+              maxBuffer: 10 * 1024 * 1024,
+            });
+            if (!output.trim()) {
+              return 'No matches found';
+            }
+            const lines = output.trim().split('\n');
+            return lines.slice(0, 50).join('\n') + (lines.length > 50 ? `\n... and ${lines.length - 50} more matches` : '');
+          } catch {
+            return 'No matches found';
+          }
+        }
+
+        case 'LS': {
+          const dirPath = input.path ? this.resolvePath(input.path as string) : workingDirectory;
+          if (!existsSync(dirPath)) {
+            return `Error: Directory not found: ${dirPath}`;
+          }
+          const entries = readdirSync(dirPath);
+          const detailed = entries.map(entry => {
+            const fullPath = join(dirPath, entry);
+            try {
+              const stat = statSync(fullPath);
+              const type = stat.isDirectory() ? 'd' : '-';
+              const size = stat.isDirectory() ? '-' : String(stat.size);
+              return `${type} ${size.padStart(10)} ${entry}`;
+            } catch {
+              return `? ${entry}`;
+            }
+          });
+          return detailed.join('\n') || '(empty directory)';
+        }
+
+        default:
+          return `Tool "${name}" not implemented`;
+      }
+    } catch (error) {
+      return `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
@@ -428,3 +700,17 @@ class ClaudeClient {
 
 // Singleton instance
 export const claudeClient = new ClaudeClient();
+
+/**
+ * Sets the working directory for file operations
+ */
+export function setWorkingDirectory(dir: string): void {
+  workingDirectory = dir;
+}
+
+/**
+ * Gets the current working directory
+ */
+export function getWorkingDirectory(): string {
+  return workingDirectory;
+}

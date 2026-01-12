@@ -68,7 +68,17 @@ router.post('/', async (req: Request, res: Response) => {
         inputTokens,
         outputTokens,
       });
-      sse.close();
+      // Only close SSE if this is the final message (not continuing with tool use)
+      if (stopReason !== 'tool_use') {
+        sse.close();
+      }
+    },
+    onToolResult: (toolId, toolName, result) => {
+      sse.send('tool_result', {
+        toolId,
+        toolName,
+        result,
+      });
     },
     onError: (error) => {
       sse.send('error', {
