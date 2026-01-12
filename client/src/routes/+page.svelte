@@ -17,7 +17,7 @@
   import { activeFilters } from '$lib/stores/filters';
   import type { ContentType } from '$types';
 
-  let viewerElement: HTMLElement;
+  let viewerComponent: ContextViewer;
   let scrollPosition = 0;
   let viewportHeight = 0;
   let totalHeight = 0;
@@ -37,9 +37,9 @@
 
   // Handle minimap click to scroll
   function handleMinimapClick(event: CustomEvent<{ position: number }>) {
-    if (viewerElement) {
+    if (viewerComponent && totalHeight > 0) {
       const scrollTo = event.detail.position * totalHeight;
-      viewerElement.scrollTo({ top: scrollTo, behavior: 'smooth' });
+      viewerComponent.scrollTo(scrollTo);
     }
   }
 
@@ -81,8 +81,9 @@
   <Toolbar />
 
   <main class="main-content">
-    <div class="viewer-container" bind:this={viewerElement}>
+    <div class="viewer-container">
       <ContextViewer
+        bind:this={viewerComponent}
         blocks={filteredBlocks}
         fontSize={$settings.fontSize}
         autoScroll={$settings.autoScroll}
@@ -133,7 +134,8 @@
 
   .viewer-container {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 </style>

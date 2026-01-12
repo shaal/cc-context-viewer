@@ -33,4 +33,4 @@ coverage/
 *.tgz
 .cache/
 
-tmp/
+tmp/cc-context-viewer/
