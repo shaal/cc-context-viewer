@@ -247,12 +247,22 @@ function handleSSEEvent(data: Record<string, unknown>): void {
     return;
   }
 
-  if ('message' in data && 'code' in data) {
-    // error
+  if ('message' in data) {
+    // error event from SSE stream
+    const errorMessage = data.message as string;
     connectionStatus.update((s) => ({
       ...s,
-      error: data.message as string,
+      error: errorMessage,
     }));
+    // Add error block to display in the viewer
+    const errorBlock: ContextBlock = {
+      id: `error-${Date.now()}`,
+      type: 'error' as ContentType,
+      content: errorMessage,
+      timestamp: new Date().toISOString(),
+      isStreaming: false,
+    };
+    blocks.update((b) => [...b, errorBlock]);
     return;
   }
 }
