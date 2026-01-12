@@ -4,12 +4,51 @@
  * Wraps the official Anthropic SDK to provide streaming responses
  * and manage conversation state. Handles all communication with the
  * Claude API.
+ *
+ * Supports two modes:
+ * 1. Direct API key via ANTHROPIC_API_KEY environment variable
+ * 2. Fallback to cliproxyapi at ~/code/utilities/cliproxyapi when no key provided
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ContentBlock, ToolUseBlock, TextBlock } from '@anthropic-ai/sdk/resources/messages';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import { contextStore } from './context-store.js';
 import { ContentType, type ToolDefinition } from '../types/index.js';
+
+/**
+ * Default cliproxyapi configuration
+ */
+const DEFAULT_CLIPROXYAPI_PATH = join(homedir(), 'code/utilities/cliproxyapi');
+const DEFAULT_CLIPROXYAPI_PORT = 8318;
+
+/**
+ * Checks if cliproxyapi is available and returns the URL if so
+ */
+function getClipProxyUrl(): string | null {
+  // Check for explicit URL override
+  if (process.env.CLIPROXYAPI_URL) {
+    return process.env.CLIPROXYAPI_URL;
+  }
+
+  // Check if cliproxyapi exists at the expected path
+  const proxyPath = process.env.CLIPROXYAPI_PATH || DEFAULT_CLIPROXYAPI_PATH;
+  const binaryPath = join(proxyPath, 'cli-proxy-api');
+
+  if (existsSync(binaryPath)) {
+    const port = process.env.CLIPROXYAPI_PORT || DEFAULT_CLIPROXYAPI_PORT;
+    return `http://localhost:${port}`;
+  }
+
+  return null;
+}
+
+/**
+ * API mode - either direct API key or proxy
+ */
+type ApiMode = 'direct' | 'proxy' | 'unconfigured';
 
 // Example tools for demonstration - can be customized
 const DEFAULT_TOOLS: ToolDefinition[] = [
@@ -62,15 +101,51 @@ class ClaudeClient {
   private systemPrompt: string;
   private tools: ToolDefinition[];
   private enableThinking: boolean;
+  private apiMode: ApiMode;
+  private proxyUrl: string | null = null;
 
   constructor() {
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    this.proxyUrl = getClipProxyUrl();
+
+    if (apiKey) {
+      // Direct API key provided
+      this.client = new Anthropic({ apiKey });
+      this.apiMode = 'direct';
+    } else if (this.proxyUrl) {
+      // Use cliproxyapi fallback
+      this.client = new Anthropic({
+        baseURL: this.proxyUrl,
+        apiKey: 'proxy-managed', // Proxy handles authentication
+      });
+      this.apiMode = 'proxy';
+    } else {
+      // No configuration available - create placeholder client
+      // Will fail on actual API calls but allows app to start
+      this.client = new Anthropic({
+        apiKey: 'not-configured',
+      });
+      this.apiMode = 'unconfigured';
+    }
+
     this.model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
     this.enableThinking = process.env.ENABLE_THINKING === 'true';
     this.systemPrompt = DEFAULT_SYSTEM_PROMPT;
     this.tools = DEFAULT_TOOLS;
+  }
+
+  /**
+   * Gets the current API mode
+   */
+  getApiMode(): ApiMode {
+    return this.apiMode;
+  }
+
+  /**
+   * Gets the proxy URL if using proxy mode
+   */
+  getProxyUrl(): string | null {
+    return this.proxyUrl;
   }
 
   /**
@@ -326,7 +401,21 @@ class ClaudeClient {
    * Checks if the client is properly configured
    */
   isConfigured(): boolean {
-    return !!process.env.ANTHROPIC_API_KEY;
+    return this.apiMode !== 'unconfigured';
+  }
+
+  /**
+   * Gets a human-readable description of the current configuration
+   */
+  getConfigurationStatus(): string {
+    switch (this.apiMode) {
+      case 'direct':
+        return 'Using direct Anthropic API key';
+      case 'proxy':
+        return `Using cliproxyapi at ${this.proxyUrl}`;
+      case 'unconfigured':
+        return 'Not configured - set ANTHROPIC_API_KEY or install cliproxyapi';
+    }
   }
 }
 

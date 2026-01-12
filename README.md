@@ -20,7 +20,9 @@ A real-time, browser-based viewer for Claude agent conversation context. View, s
 ### Prerequisites
 
 - Node.js 18+
-- An [Anthropic API key](https://console.anthropic.com/)
+- One of the following for API access:
+  - An [Anthropic API key](https://console.anthropic.com/), OR
+  - [cliproxyapi](https://github.com/yourusername/cliproxyapi) installed at `~/code/utilities/cliproxyapi`
 
 ### Installation
 
@@ -117,14 +119,34 @@ Open http://localhost:5173 in your browser.
 Environment variables (`.env`):
 
 ```bash
-# Required
+# API Key - Choose one option:
+
+# Option 1: Direct Anthropic API key
 ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
 
-# Optional
+# Option 2: Use cliproxyapi (leave ANTHROPIC_API_KEY unset)
+# The app auto-detects cliproxyapi at ~/code/utilities/cliproxyapi
+# Customize with these optional variables:
+# CLIPROXYAPI_URL=http://localhost:8318
+# CLIPROXYAPI_PATH=~/code/utilities/cliproxyapi
+# CLIPROXYAPI_PORT=8318
+
+# Optional settings
 PORT=3001                           # Server port
 CLAUDE_MODEL=claude-sonnet-4-20250514  # Model to use
 ENABLE_THINKING=true                # Enable extended thinking
 ```
+
+### API Key Options
+
+The application supports two methods for API authentication:
+
+1. **Direct API Key**: Set `ANTHROPIC_API_KEY` in your `.env` file
+2. **cliproxyapi**: If no API key is set, the app automatically looks for `cliproxyapi` at `~/code/utilities/cliproxyapi`. This proxy handles authentication based on your subscription.
+
+The server startup message indicates which mode is active:
+- `Using direct Anthropic API key`
+- `Using cliproxyapi at http://localhost:8318`
 
 ## Project Structure
 
@@ -165,11 +187,21 @@ npm run lint
 
 ## Troubleshooting
 
-### "ANTHROPIC_API_KEY not configured"
-Make sure you've created a `.env` file with your API key:
+### "Not configured - set ANTHROPIC_API_KEY or install cliproxyapi"
+You need one of the following:
+
+**Option 1: Set your API key**
 ```bash
 cp .env.example .env
-# Edit .env and add your key
+# Edit .env and add your ANTHROPIC_API_KEY
+```
+
+**Option 2: Install cliproxyapi**
+```bash
+# Clone cliproxyapi to the expected location
+git clone https://github.com/yourusername/cliproxyapi ~/code/utilities/cliproxyapi
+cd ~/code/utilities/cliproxyapi
+# Follow cliproxyapi setup instructions
 ```
 
 ### Port already in use

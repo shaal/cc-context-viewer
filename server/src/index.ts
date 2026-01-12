@@ -7,7 +7,9 @@
  * - Export functionality in multiple formats
  *
  * Environment Variables:
- * - ANTHROPIC_API_KEY: Required - Your Anthropic API key
+ * - ANTHROPIC_API_KEY: Optional - Your Anthropic API key (falls back to cliproxyapi)
+ * - CLIPROXYAPI_URL: Optional - Custom proxy URL (default: http://localhost:8318)
+ * - CLIPROXYAPI_PATH: Optional - Path to cliproxyapi (default: ~/code/utilities/cliproxyapi)
  * - PORT: Optional - Server port (default: 3001)
  * - NODE_ENV: Optional - Environment (development/production)
  * - CLAUDE_MODEL: Optional - Model to use (default: claude-sonnet-4-20250514)
@@ -40,6 +42,8 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     configured: claudeClient.isConfigured(),
+    apiMode: claudeClient.getApiMode(),
+    configurationStatus: claudeClient.getConfigurationStatus(),
   });
 });
 
@@ -93,13 +97,19 @@ app.use((req, res) => {
 
 // Start server
 app.listen(PORT, () => {
+  const apiMode = claudeClient.getApiMode();
+  const configStatus = claudeClient.getConfigurationStatus();
+  const statusIcon = claudeClient.isConfigured() ? '✓' : '✗';
+  const statusText = claudeClient.isConfigured() ? 'Configured' : 'NOT CONFIGURED';
+
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║           Claude Context Viewer - Server                   ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Status: Running                                           ║
 ║  Port: ${String(PORT).padEnd(51)}║
-║  API Key: ${claudeClient.isConfigured() ? 'Configured ✓'.padEnd(47) : 'NOT CONFIGURED ✗'.padEnd(47)}║
+║  API: ${(statusText + ' ' + statusIcon).padEnd(52)}║
+║  Mode: ${configStatus.padEnd(51)}║
 ╚════════════════════════════════════════════════════════════╝
 
 Endpoints:
@@ -113,9 +123,16 @@ Endpoints:
   // Initialize Claude client with default configuration
   if (claudeClient.isConfigured()) {
     claudeClient.initialize();
-    console.log('✓ Claude client initialized with default configuration\n');
+    if (apiMode === 'proxy') {
+      console.log(`✓ Claude client initialized via cliproxyapi at ${claudeClient.getProxyUrl()}\n`);
+    } else {
+      console.log('✓ Claude client initialized with direct API key\n');
+    }
   } else {
-    console.warn('⚠ Warning: ANTHROPIC_API_KEY not set. Set it in .env file.\n');
+    console.warn(`⚠ Warning: No API configuration found.
+  Option 1: Set ANTHROPIC_API_KEY in .env file
+  Option 2: Install cliproxyapi at ~/code/utilities/cliproxyapi
+`);
   }
 });
 
