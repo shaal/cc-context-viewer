@@ -2,7 +2,11 @@
   "name": "claude-context-viewer",
   "version": "1.0.0",
   "description": "Real-time viewer for Claude agent conversation context",
-  "private": true,
+  "type": "module",
+  "bin": {
+    "ccv": "./bin/ccv.js",
+    "claude-context-viewer": "./bin/ccv.js"
+  },
   "workspaces": [
     "server",
     "client"

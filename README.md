@@ -24,7 +24,42 @@ A real-time, browser-based viewer for Claude agent conversation context. View, s
   - An [Anthropic API key](https://console.anthropic.com/), OR
   - [cliproxyapi](https://github.com/yourusername/cliproxyapi) installed at `~/code/utilities/cliproxyapi`
 
-### Installation
+### Global Installation (Recommended)
+
+```bash
+# Clone and install globally
+git clone https://github.com/yourusername/claude-context-viewer.git
+cd claude-context-viewer
+npm install
+npm link
+
+# Now run from any project directory!
+cd ~/my-awesome-project
+ccv
+```
+
+### CLI Usage
+
+```bash
+# Start viewer in current directory
+ccv
+
+# Start with specific project directory
+ccv ~/my-project
+
+# Use custom port
+ccv --port 3002
+
+# Don't auto-open browser
+ccv --no-open
+
+# Show help
+ccv --help
+```
+
+The project directory appears in the status bar and is used for all file operations (exports, etc.).
+
+### Local Development
 
 ```bash
 # Clone the repository
@@ -37,11 +72,7 @@ npm install
 # Configure environment
 cp .env.example .env
 # Edit .env and add your ANTHROPIC_API_KEY
-```
 
-### Running
-
-```bash
 # Development mode (both server and client)
 npm run dev
 

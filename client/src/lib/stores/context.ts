@@ -33,14 +33,38 @@ export const tokenUsage = writable<{ input: number; output: number }>({
 // Conversation metadata
 export const conversationId = writable<string>('');
 
+// Project info
+export const projectInfo = writable<{ projectDir: string; projectName: string }>({
+  projectDir: '',
+  projectName: '',
+});
+
 // Current message being streamed
 const currentStreamingBlockId = writable<string | null>(null);
+
+/**
+ * Fetches the project info from the server
+ */
+export async function fetchProjectInfo(): Promise<void> {
+  try {
+    const response = await fetch('/api/project');
+    if (!response.ok) throw new Error('Failed to fetch project info');
+
+    const info = await response.json();
+    projectInfo.set(info);
+  } catch (error) {
+    console.error('Failed to fetch project info:', error);
+  }
+}
 
 /**
  * Fetches the full context from the server
  */
 export async function fetchContext(): Promise<void> {
   try {
+    // Fetch project info in parallel
+    fetchProjectInfo();
+
     const response = await fetch('/api/context');
     if (!response.ok) throw new Error('Failed to fetch context');
 

@@ -11,6 +11,7 @@
     blocks,
     tokenUsage,
     isStreaming,
+    projectInfo,
   } from '$lib/stores/context';
   import { settings } from '$lib/stores/settings';
   import { activeFilters } from '$lib/stores/filters';
@@ -110,6 +111,7 @@
     blockCount={filteredBlocks.length}
     inputTokens={$tokenUsage.input}
     outputTokens={$tokenUsage.output}
+    projectName={$projectInfo.projectName}
   />
 </div>
 

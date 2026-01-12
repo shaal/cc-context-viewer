@@ -5,6 +5,7 @@
   export let blockCount: number = 0;
   export let inputTokens: number = 0;
   export let outputTokens: number = 0;
+  export let projectName: string = '';
 
   $: statusColor = error ? 'error' : streaming ? 'streaming' : connected ? 'connected' : 'disconnected';
   $: statusText = error ? 'Error' : streaming ? 'Streaming' : connected ? 'Connected' : 'Disconnected';
@@ -32,6 +33,12 @@
   </div>
 
   <div class="status-center">
+    {#if projectName}
+      <span class="project-name" title="Project directory">
+        📁 {projectName}
+      </span>
+      <span class="separator">|</span>
+    {/if}
     <span class="block-count" title="Total blocks">
       📦 {blockCount} blocks
     </span>
@@ -103,6 +110,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .project-name {
+    font-weight: 600;
+    color: var(--color-primary, #2196F3);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .separator {
+    color: var(--color-text-secondary);
+    opacity: 0.5;
   }
 
   .block-count {

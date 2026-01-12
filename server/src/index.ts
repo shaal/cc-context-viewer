@@ -14,6 +14,7 @@
  * - NODE_ENV: Optional - Environment (development/production)
  * - CLAUDE_MODEL: Optional - Model to use (default: claude-sonnet-4-20250514)
  * - ENABLE_THINKING: Optional - Enable extended thinking (default: false)
+ * - PROJECT_DIR: Optional - Project directory for file operations (default: cwd)
  */
 
 import 'dotenv/config';
@@ -26,6 +27,7 @@ import { claudeClient } from './services/claude-client.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
 
 // Middleware
 app.use(cors({
@@ -44,6 +46,15 @@ app.get('/health', (req, res) => {
     configured: claudeClient.isConfigured(),
     apiMode: claudeClient.getApiMode(),
     configurationStatus: claudeClient.getConfigurationStatus(),
+    projectDir: PROJECT_DIR,
+  });
+});
+
+// Project directory endpoint
+app.get('/api/project', (req, res) => {
+  res.json({
+    projectDir: PROJECT_DIR,
+    projectName: PROJECT_DIR.split('/').pop() || PROJECT_DIR,
   });
 });
 
@@ -101,6 +112,7 @@ app.listen(PORT, () => {
   const configStatus = claudeClient.getConfigurationStatus();
   const statusIcon = claudeClient.isConfigured() ? '✓' : '✗';
   const statusText = claudeClient.isConfigured() ? 'Configured' : 'NOT CONFIGURED';
+  const projectName = PROJECT_DIR.split('/').pop() || PROJECT_DIR;
 
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
@@ -108,6 +120,7 @@ app.listen(PORT, () => {
 ╠════════════════════════════════════════════════════════════╣
 ║  Status: Running                                           ║
 ║  Port: ${String(PORT).padEnd(51)}║
+║  Project: ${projectName.slice(0, 48).padEnd(48)}║
 ║  API: ${(statusText + ' ' + statusIcon).padEnd(52)}║
 ║  Mode: ${configStatus.padEnd(51)}║
 ╚════════════════════════════════════════════════════════════╝
